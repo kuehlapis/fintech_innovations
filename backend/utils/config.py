@@ -21,18 +21,10 @@ class Config:
         str(Path(__file__).resolve().parents[1] / "agents" / "prompts" / "prompts.yaml"),
     )
 
-
     # ── Supabase ──────────────────────────────────────────────────────────────
     SUPABASE_URL: SecretStr = SecretStr(os.getenv("SUPABASE_URL", ""))
     SUPABASE_ANON_KEY: SecretStr = SecretStr(os.getenv("SUPABASE_ANON_KEY", ""))
     SUPABASE_SERVICE_ROLE_KEY: SecretStr = SecretStr(os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
-
-    # ── App ───────────────────────────────────────────────────────────────────
-    CORS_ORIGINS: list[str] = json.loads(
-        os.getenv("CORS_ORIGINS", '["http://localhost:3000"]')
-    )
-
-    PIPELINE_INTERVAL_MINUTES: int = int(os.getenv("PIPELINE_INTERVAL_MINUTES", "60"))
 
     @classmethod
     def validate_config(cls, required: list[str] | None = None) -> None:
@@ -42,8 +34,6 @@ class Config:
             "SUPABASE_SERVICE_ROLE_KEY": cls.SUPABASE_SERVICE_ROLE_KEY.get_secret_value(),
             "GEMINI_API_KEY": cls.GEMINI_API.get_secret_value(),
             "GEMINI_MODEL": cls.GEMINI_MODEL,
-            "CORS_ORIGINS": cls.CORS_ORIGINS,
-            "PIPELINE_INTERVAL_MINUTES": cls.PIPELINE_INTERVAL_MINUTES,
             "PROMPT_PATH": cls.PROMPT_PATH,
         }
 
@@ -82,10 +72,6 @@ class Config:
         return cls.APP_ENV
 
     @classmethod
-    def get_log_level(cls) -> str:
-        return cls.LOG_LEVEL
-
-    @classmethod
     def get_supabase_url(cls) -> str:
         return cls.SUPABASE_URL.get_secret_value()
 
@@ -96,14 +82,6 @@ class Config:
     @classmethod
     def get_supabase_service_role_key(cls) -> str:
         return cls.SUPABASE_SERVICE_ROLE_KEY.get_secret_value()
-
-    @classmethod
-    def get_cors_origins(cls) -> list[str]:
-        return cls.CORS_ORIGINS
-
-    @classmethod
-    def get_pipeline_interval_minutes(cls) -> int:
-        return cls.PIPELINE_INTERVAL_MINUTES
 
 
 @lru_cache(maxsize=1)

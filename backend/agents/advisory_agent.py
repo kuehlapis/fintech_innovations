@@ -1,16 +1,15 @@
 import logging
-from typing import Any
+from typing import Iterable
 
-from backend.agents.base_agent import BaseAgent
-from utils.config import getConfig
+from agents.base_agent import BaseAgent
+from agents.schemas import AdvisoryRecommendation, IngestionResult, QuantSignal, SentimentResult
 
 logger = logging.getLogger(__name__)
 
 
 class AdvisoryAgent(BaseAgent):
-    def __init__(self):
-        cfg = getConfig()
-        super().__init__(model=cfg.get_ollama_model())
+    def __init__(self) -> None:
+        super().__init__(agent_type="advisory")
 
     @staticmethod
     def _compute_wellness_score(
@@ -26,84 +25,86 @@ class AdvisoryAgent(BaseAgent):
         )
         return int(round(raw * 100))
 
-    async def _generate_advisory_text(self, state: dict[str, Any]) -> str:
-        asset_weights = state.get("asset_weights", {})
-        total_value = state.get("total_value", 0.0)
-        diversification_score = state.get("diversification_score", 0.0)
-        sentiment_score = state.get("sentiment_score", 0.0)
-        liquidity_ratio = state.get("liquidity_ratio", 0.0)
-        wellness_score = state.get("_wellness_score", 0)
-        headlines = state.get("news_headlines", [])
+    @staticmethod
+    def _format_list(values: Iterable[str]) -> str:
+        return "\n".join(f"- {value}" for value in values if value)
 
-        allocation_lines = "\n".join(
-            f"  - {ticker}: {weight*100:.1f}%"
-            for ticker, weight in sorted(asset_weights.items(), key=lambda x: -x[1])
+    def _build_input(
+        self,
+        ingestion: IngestionResult,
+        sentiment: SentimentResult,
+        quant: QuantSignal,
+    ) -> str:
+        allocation_lines = self._format_list(
+            [
+                f"{ticker}: {weight * 100:.1f}%"
+                for ticker, weight in sorted(
+                    quant.asset_weights.items(), key=lambda x: -x[1]
+                )
+            ]
         )
-        headline_sample = "\n".join(f"  - {h}" for h in headlines[:5])
+        headlines = self._format_list(ingestion.news_headlines[:5])
+        wellness_score = self._compute_wellness_score(
+            quant.diversification_score,
+            sentiment.sentiment_score,
+            quant.liquidity_ratio,
+        )
 
-        prompt = f"""You are a senior portfolio manager and financial advisor.
-Analyse the following portfolio data and provide actionable, concise investment advice.
+        return (
+            "Portfolio Summary\n"
+            f"- Total Value: ${quant.total_value:,.2f}\n"
+            f"- Wellness Score: {wellness_score}/100\n"
+            f"- Diversification Score: {quant.diversification_score:.2f}\n"
+            f"- Liquidity Ratio: {quant.liquidity_ratio:.2f}\n"
+            f"- Sentiment Score: {sentiment.sentiment_score:.2f}\n\n"
+            "Asset Allocation\n"
+            f"{allocation_lines or '- No holdings data available.'}\n\n"
+            "Recent News\n"
+            f"{headlines or '- No recent news available.'}"
+        )
 
-## Portfolio Summary
-- Total Value: ${total_value:,.2f}
-- Wellness Score: {wellness_score}/100
-- Diversification Score: {diversification_score:.2f} (0=concentrated, 1=diversified)
-- Liquidity Ratio: {liquidity_ratio:.2f}
-- Market Sentiment: {sentiment_score:.2f} (-1=very negative, 0=neutral, +1=very positive)
+    def _fallback_recommendation(self, quant: QuantSignal) -> AdvisoryRecommendation:
+        summary = (
+            "Portfolio review completed. Focus on diversification and liquidity "
+            "while monitoring market conditions."
+        )
+        risks = [
+            "Concentration risk" if quant.diversification_score < 0.4 else "",
+            "Liquidity constraints" if quant.liquidity_ratio < 0.5 else "",
+        ]
+        actions = [
+            "Review allocation targets and rebalance if concentrated.",
+            "Keep a cash buffer for near-term needs.",
+        ]
+        outlook = "Neutral outlook with emphasis on risk management."
+        rationale = "Generated without LLM due to missing configuration."
+        return AdvisoryRecommendation(
+            summary=summary,
+            risks=[r for r in risks if r],
+            actions=actions,
+            outlook=outlook,
+            confidence=0.3,
+            rationale=rationale,
+        )
 
-## Asset Allocation
-{allocation_lines if allocation_lines else "  No holdings data available."}
+    async def run(
+        self,
+        ingestion: IngestionResult,
+        sentiment: SentimentResult,
+        quant: QuantSignal,
+    ) -> AdvisoryRecommendation:
+        input_text = self._build_input(ingestion, sentiment, quant)
 
-## Recent News Headlines
-{headline_sample if headline_sample else "  No recent news available."}
-
-## Instructions
-1. Identify top 2-3 risks.
-2. Suggest 2-3 actionable improvements.
-3. Provide sentiment-adjusted outlook.
-4. Keep response under 250 words.
-5. Use plain English.
-"""
+        if not self.client:
+            return self._fallback_recommendation(quant)
 
         try:
-            return (
-                await self.chat_text(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a professional financial advisor. Provide structured, practical investment advice.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    options={"temperature": 0.4},
-                )
-            ).strip()
+            recommendation = self.run_structured(input_text, AdvisoryRecommendation)
+            if not recommendation.summary:
+                recommendation.summary = "Portfolio analysis completed."
+            if not recommendation.rationale:
+                recommendation.rationale = "Generated from portfolio metrics and sentiment."
+            return recommendation
         except Exception as exc:
             logger.error("[AdvisoryAgent] LLM error: %s", exc)
-            return (
-                "Unable to generate advisory text at this time. "
-                "Please ensure your holdings are up-to-date and market data is available."
-            )
-
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
-        diversification_score = state.get("diversification_score", 0.0)
-        sentiment_score = state.get("sentiment_score", 0.0)
-        liquidity_ratio = state.get("liquidity_ratio", 0.0)
-
-        wellness_score = self._compute_wellness_score(
-            diversification_score, sentiment_score, liquidity_ratio
-        )
-
-        advisory_text = await self._generate_advisory_text(
-            {**state, "_wellness_score": wellness_score}
-        )
-
-        logger.info("[AdvisoryAgent] Wellness score: %d", wellness_score)
-        return {**state, "wellness_score": wellness_score, "advisory_text": advisory_text}
-
-
-_advisory_agent = AdvisoryAgent()
-
-
-async def advisory_agent(state: dict[str, Any]) -> dict[str, Any]:
-    return await _advisory_agent.run(state)
+            return self._fallback_recommendation(quant)

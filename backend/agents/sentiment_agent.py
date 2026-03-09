@@ -1,63 +1,53 @@
 import logging
-from typing import Any
 
-from backend.agents.base_agent import BaseAgent
+from agents.base_agent import BaseAgent
+from agents.schemas import IngestionResult, SentimentResult
 
 logger = logging.getLogger(__name__)
 
 
 class SentimentAgent(BaseAgent):
+    def __init__(self) -> None:
+        super().__init__(agent_type="sentiment")
 
-    def __init__(self):
-        super().__init__()
-
-    async def _score_with_llm(self, headlines: list[str]) -> float:
-
-        headlines_text = "\n".join(headlines[:30])
-
-        prompt = f"""
-Return a number between -1 and 1 representing market sentiment.
-
-Headlines:
-{headlines_text}
-
-Only return the number.
-"""
-
-        try:
-
-            raw = await self.chat_text(
-                messages=[{"role": "user", "content": prompt}],
-                options={"temperature": 0},
-            )
-
-            score = float(raw.strip())
-
-            return max(-1.0, min(1.0, score))
-
-        except Exception:
+    @staticmethod
+    def _score_with_heuristics(headlines: list[str]) -> float:
+        if not headlines:
             return 0.0
+        positive = {"beat", "upgrade", "growth", "gain", "record", "surge"}
+        negative = {"miss", "downgrade", "decline", "loss", "lawsuit", "crash"}
 
-    async def run(self, state: dict[str, Any]):
+        score = 0
+        for headline in headlines:
+            words = set(headline.lower().split())
+            score += len(words & positive)
+            score -= len(words & negative)
 
-        tickers = state.get("tickers", [])
+        return max(-1.0, min(1.0, score / 10.0))
 
-        if not tickers:
-            return {**state, "sentiment_score": 0.0}
+    def _score_with_llm(self, headlines: list[str]) -> float:
+        headlines_text = "\n".join(headlines[:30])
+        prompt = (
+            "Return a number between -1 and 1 representing market sentiment.\n\n"
+            f"Headlines:\n{headlines_text}\n\n"
+            "Only return the number."
+        )
 
-        headlines = await self.service.fetch_news_headlines(tickers)
+        raw = self.run_text(prompt)
+        try:
+            score = float(raw.strip())
+            return max(-1.0, min(1.0, score))
+        except Exception:
+            return self._score_with_heuristics(headlines)
 
-        sentiment_score = await self._score_with_llm(headlines)
+    async def run(self, ingestion: IngestionResult) -> SentimentResult:
+        if not ingestion.tickers:
+            return SentimentResult(sentiment_score=0.0, news_headlines=[])
 
-        return {
-            **state,
-            "sentiment_score": sentiment_score,
-            "news_headlines": headlines,
-        }
+        headlines = ingestion.news_headlines
+        sentiment_score = self._score_with_llm(headlines)
 
-
-_sentiment_agent = SentimentAgent()
-
-
-async def sentiment_agent(state):
-    return await _sentiment_agent.run(state)
+        return SentimentResult(
+            sentiment_score=sentiment_score,
+            news_headlines=headlines,
+        )

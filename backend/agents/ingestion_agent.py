@@ -1,42 +1,54 @@
-"""
-agents/ingestion_agent.py
-Agent 1 - fetch holdings from Supabase and enrich with live prices.
-"""
+"""Agent 1 - normalize incoming portfolio input and enrich with prices."""
 import logging
-from typing import Any
 
-from backend.agents.base_agent import BaseAgent
-from db.queries import get_holdings_by_user
+from agents.base_agent import BaseAgent
+from agents.schemas import Holding, IngestionRequest, IngestionResult
+from db.queries import Queries
+from services.market_data import MarketDataService
 
 logger = logging.getLogger(__name__)
 
 
 class IngestionAgent(BaseAgent):
-    def __init__(self):
-        super().__init__()
+    def __init__(self) -> None:
+        super().__init__(agent_type="ingestion")
+        self.queries = Queries()
+        self.market_data = MarketDataService()
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
-        user_id: str = state["user_id"]
-        logger.info("[IngestionAgent] Fetching holdings for user %s", user_id)
+    async def _load_holdings(self, request: IngestionRequest) -> list[Holding]:
+        if request.holdings:
+            return request.holdings
 
-        holdings = await get_holdings_by_user(user_id)
-        if not holdings:
-            logger.warning("[IngestionAgent] No holdings found for user %s", user_id)
-            return {**state, "holdings": [], "prices": {}, "tickers": []}
+        if not request.user_id:
+            return []
 
-        tickers = [h["ticker"] for h in holdings]
-        prices = await get_current_prices(tickers)
+        logger.info("[IngestionAgent] Fetching holdings for user %s", request.user_id)
+        raw_holdings = await self.queries.get_holdings_by_user(request.user_id)
+        return [
+            Holding(
+                ticker=h.get("ticker", ""),
+                quantity=float(h.get("quantity", 0)),
+                asset_class=h.get("asset_class", "other"),
+            )
+            for h in raw_holdings
+        ]
 
-        logger.info(
-            "[IngestionAgent] Retrieved %d holdings, %d prices",
-            len(holdings),
-            len(prices),
+    async def run(self, request: IngestionRequest) -> IngestionResult:
+        holdings = await self._load_holdings(request)
+        tickers = [h.ticker for h in holdings if h.ticker]
+        prices = await self.market_data.get_current_prices(tickers)
+        news = request.news_headlines or await self.market_data.fetch_news_headlines(
+            tickers
         )
-        return {**state, "holdings": holdings, "prices": prices, "tickers": tickers}
 
+        if not holdings:
+            logger.warning("[IngestionAgent] No holdings provided")
 
-_ingestion_agent = IngestionAgent()
-
-
-async def ingestion_agent(state: dict[str, Any]) -> dict[str, Any]:
-    return await _ingestion_agent.run(state)
+        return IngestionResult(
+            user_id=request.user_id,
+            normalized_text=request.raw_text.strip(),
+            holdings=holdings,
+            tickers=tickers,
+            prices=prices,
+            news_headlines=news,
+        )

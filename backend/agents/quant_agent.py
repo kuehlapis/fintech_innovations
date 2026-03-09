@@ -1,16 +1,17 @@
-import logging
 import asyncio
-from typing import Any
+import logging
 
-import numpy as np
-
-from backend.agents.base_agent import BaseAgent
-from services.market_data import is_liquid
+from agents.base_agent import BaseAgent
+from agents.schemas import IngestionResult, QuantSignal
+from services.market_data import MarketDataService
 
 logger = logging.getLogger(__name__)
 
 
 class QuantAgent(BaseAgent):
+    def __init__(self) -> None:
+        super().__init__(agent_type="quant")
+        self.market_data = MarketDataService()
 
     @staticmethod
     def _compute_hhi(weights: dict[str, float]) -> float:
@@ -20,83 +21,43 @@ class QuantAgent(BaseAgent):
 
     @staticmethod
     def _normalise_hhi(hhi: float, n: int) -> float:
-
         if n <= 1:
             return 0.0
 
         min_hhi = 1.0 / n
         max_hhi = 1.0
-
         norm = (hhi - max_hhi) / (min_hhi - max_hhi)
+        return max(0.0, min(1.0, norm))
 
-        return float(np.clip(norm, 0.0, 1.0))
+    async def run(self, ingestion: IngestionResult) -> QuantSignal:
+        if not ingestion.holdings:
+            logger.warning("[QuantAgent] No holdings found")
+            return QuantSignal()
 
-    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
-
-        holdings = state.get("holdings", [])
-        prices = state.get("prices", {})
-
-        if not holdings:
-            logger.warning("No holdings found")
-
-            return {
-                **state,
-                "total_value": 0,
-                "asset_weights": {},
-                "diversification_score": 0,
-                "liquidity_ratio": 0,
-            }
-
-        values = {}
-
-        for h in holdings:
-
-            ticker = h["ticker"]
-
-            price = prices.get(ticker)
-
+        values: dict[str, float] = {}
+        for holding in ingestion.holdings:
+            price = ingestion.prices.get(holding.ticker)
             if price is None:
                 continue
-
-            values[ticker] = h["quantity"] * price
+            values[holding.ticker] = holding.quantity * price
 
         total_value = sum(values.values())
-
         if total_value == 0:
-            return {
-                **state,
-                "total_value": 0,
-                "asset_weights": {},
-                "diversification_score": 0,
-                "liquidity_ratio": 0,
-            }
+            return QuantSignal()
 
-        asset_weights = {
-            ticker: value / total_value for ticker, value in values.items()
-        }
-
+        asset_weights = {ticker: value / total_value for ticker, value in values.items()}
         hhi = self._compute_hhi(asset_weights)
-
         diversification_score = self._normalise_hhi(hhi, len(asset_weights))
 
         liquidity_checks = await asyncio.gather(
-            *[is_liquid(t) for t in values.keys()]
+            *[self.market_data.is_liquid(t) for t in values.keys()]
         )
+        liquidity_ratio = sum(liquidity_checks) / max(1, len(liquidity_checks))
 
-        liquidity_ratio = sum(liquidity_checks) / len(liquidity_checks)
-
-        return {
-            **state,
-            "total_value": total_value,
-            "asset_weights": asset_weights,
-            "hhi": hhi,
-            "diversification_score": diversification_score,
-            "liquidity_ratio": liquidity_ratio,
-        }
-
-
-_quant_agent = QuantAgent()
-
-
-async def quant_agent(state: dict[str, Any]):
-    return await _quant_agent.run(state)
+        return QuantSignal(
+            total_value=total_value,
+            asset_weights=asset_weights,
+            hhi=hhi,
+            diversification_score=diversification_score,
+            liquidity_ratio=liquidity_ratio,
+        )

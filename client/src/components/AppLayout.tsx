@@ -5,28 +5,38 @@ import {
   PieChart,
   Newspaper,
   FileSearch,
+  LogIn,
+  UserPlus,
   Menu,
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { getStoredUserId } from "@/lib/storage";
 
-const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+const authedNavItems = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/holdings", label: "Holdings", icon: PieChart },
   { to: "/sentiment", label: "Sentiment", icon: Newspaper },
   { to: "/analyze", label: "Analyze", icon: FileSearch },
 ];
 
+const publicNavItems = [
+  { to: "/login", label: "Login", icon: LogIn },
+  { to: "/signup", label: "Sign Up", icon: UserPlus },
+];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const userId = getStoredUserId();
+  const navItems = userId ? authedNavItems : publicNavItems;
 
   return (
     <div className="min-h-screen bg-background gradient-mesh">
       {/* Top bar */}
       <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-xl">
         <div className="container flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to={userId ? "/dashboard" : "/login"} className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <span className="font-display text-sm font-bold text-primary-foreground">A</span>
             </div>

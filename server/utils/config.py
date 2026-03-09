@@ -35,6 +35,8 @@ class Config:
             "GEMINI_API_KEY": cls.GEMINI_API.get_secret_value(),
             "GEMINI_MODEL": cls.GEMINI_MODEL,
             "PROMPT_PATH": cls.PROMPT_PATH,
+            "LOG_LEVEL": cls.LOG_LEVEL,
+            
         }
 
         if required:
@@ -82,6 +84,12 @@ class Config:
     @classmethod
     def get_supabase_service_role_key(cls) -> str:
         return cls.SUPABASE_SERVICE_ROLE_KEY.get_secret_value()
+    
+    @classmethod
+    def get_log_level(cls) -> str:
+        return cls.LOG_LEVEL
+    
+    
 
 
 @lru_cache(maxsize=1)

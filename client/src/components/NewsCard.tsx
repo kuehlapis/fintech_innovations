@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import type { NewsItem } from "@/lib/mockData";
+import type { NewsItem } from "@/lib/types";
 
 interface NewsCardProps {
   item: NewsItem;

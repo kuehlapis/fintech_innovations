@@ -1,10 +1,48 @@
+import * as React from "react";
 import { motion } from "framer-motion";
-import { mockHoldings } from "@/lib/mockData";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { addHolding, analyzePortfolio } from "@/lib/api";
+import { buildAnalyzePayload, buildDashboardData } from "@/lib/analysis";
+import { addStoredGuestHolding, getStoredGuestHoldings, getStoredUserId } from "@/lib/storage";
 
 export default function Holdings() {
   const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-  const sorted = [...mockHoldings].sort((a, b) => b.weight - a.weight);
+  const userId = getStoredUserId();
+  const queryClient = useQueryClient();
+  const [ticker, setTicker] = React.useState("");
+  const [quantity, setQuantity] = React.useState("");
+  const [submitMessage, setSubmitMessage] = React.useState("");
+
+  const { data } = useQuery({
+    queryKey: ["analysis", userId],
+    queryFn: () => analyzePortfolio(buildAnalyzePayload(userId, "")),
+    enabled: Boolean(userId),
+    staleTime: 60_000,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      const symbol = ticker.trim().toUpperCase();
+      const qty = Number(quantity);
+      if (userId === "guest") {
+        addStoredGuestHolding(symbol, qty);
+        return { ok: true };
+      }
+      return addHolding(userId, symbol, qty);
+    },
+    onSuccess: () => {
+      setSubmitMessage("Holding added.");
+      setTicker("");
+      setQuantity("");
+      queryClient.invalidateQueries({ queryKey: ["analysis", userId] });
+    },
+    onError: () => setSubmitMessage("Unable to add holding."),
+  });
+
+  const view = data ? buildDashboardData(data) : null;
+  const guestHoldings = userId === "guest" ? getStoredGuestHoldings() : [];
+  const sorted = [...(view?.holdings ?? [])].sort((a, b) => b.weight - a.weight);
   const sectors = sorted.reduce<Record<string, number>>((acc, h) => {
     acc[h.sector] = (acc[h.sector] || 0) + h.weight;
     return acc;
@@ -12,9 +50,61 @@ export default function Holdings() {
 
   return (
     <div className="space-y-8">
+      {!userId && (
+        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+          Set a user id on the Analysis page to load holdings.
+        </div>
+      )}
+
+      {userId && (
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="rounded-xl border border-border bg-card p-6 space-y-4"
+        >
+          <h2 className="font-display text-base font-semibold text-card-foreground">Add Holding</h2>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Ticker</span>
+              <input
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value)}
+                placeholder="AAPL"
+                className="mt-2 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity</span>
+              <input
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                placeholder="10"
+                type="number"
+                className="mt-2 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => addMutation.mutate()}
+                disabled={!ticker.trim() || !quantity.trim() || addMutation.isPending}
+                className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {addMutation.isPending ? "Adding…" : "Add Holding"}
+              </button>
+            </div>
+          </div>
+          {submitMessage && (
+            <p className="text-sm text-muted-foreground">{submitMessage}</p>
+          )}
+        </motion.section>
+      )}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
         <h1 className="font-display text-3xl font-bold text-foreground">Holdings & Allocation</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{sorted.length} positions across {Object.keys(sectors).length} sectors</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {sorted.length || guestHoldings.length} positions across {Object.keys(sectors).length} sectors
+        </p>
       </motion.div>
 
       {/* Sector breakdown bar */}

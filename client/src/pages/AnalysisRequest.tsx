@@ -1,21 +1,37 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Send, Loader2, FileSearch } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { analyzePortfolio } from "@/lib/api";
+import { buildAnalyzePayload } from "@/lib/analysis";
+import { getStoredUserId } from "@/lib/storage";
 
 export default function AnalysisRequest() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const userId = getStoredUserId();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (payload: { userId: string; query: string }) =>
+      analyzePortfolio(buildAnalyzePayload(payload.userId, payload.query)),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["analysis", userId], data);
+      setSubmitted(true);
+      navigate(`/recommendation/${data.request_id}`);
+    },
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (!query.trim() || !userId.trim()) return;
     setLoading(true);
-    // Simulate backend call
-    setTimeout(() => {
-      setLoading(false);
-      setSubmitted(true);
-    }, 2000);
+    mutation.mutate({ userId: userId.trim(), query: query.trim() }, {
+      onSettled: () => setLoading(false),
+    });
   };
 
   const presets = [
@@ -70,12 +86,16 @@ export default function AnalysisRequest() {
 
         <button
           type="submit"
-          disabled={!query.trim() || loading}
+          disabled={!query.trim() || !userId.trim() || loading}
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           {loading ? "Processing…" : "Submit to Pipeline"}
         </button>
+
+        {mutation.isError && (
+          <p className="text-sm text-destructive">Unable to submit analysis request.</p>
+        )}
       </motion.form>
 
       {submitted && (

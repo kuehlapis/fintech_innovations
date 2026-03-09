@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Shield, ShieldAlert, ShieldX, ChevronRight } from "lucide-react";
-import type { Recommendation } from "@/lib/mockData";
+import type { Recommendation } from "@/lib/types";
 
 interface RecommendationCardProps {
   rec: Recommendation;

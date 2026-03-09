@@ -1,12 +1,24 @@
 import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Shield, ShieldAlert, ShieldX, AlertTriangle, CheckCircle2, Target, Zap } from "lucide-react";
 import AgentPipeline from "@/components/AgentPipeline";
-import { mockRecommendations } from "@/lib/mockData";
+import { analyzePortfolio } from "@/lib/api";
+import { buildAnalyzePayload, buildDashboardData } from "@/lib/analysis";
+import { getStoredUserId } from "@/lib/storage";
 
 export default function RecommendationDetail() {
   const { id } = useParams<{ id: string }>();
-  const rec = mockRecommendations.find((r) => r.id === id);
+  const userId = getStoredUserId();
+  const { data } = useQuery({
+    queryKey: ["analysis", userId],
+    queryFn: () => analyzePortfolio(buildAnalyzePayload(userId, "")),
+    enabled: Boolean(userId),
+    staleTime: 60_000,
+  });
+
+  const view = data ? buildDashboardData(data) : null;
+  const rec = view?.recommendations.find((r) => r.id === id) ?? view?.recommendations[0];
 
   if (!rec) {
     return (

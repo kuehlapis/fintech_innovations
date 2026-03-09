@@ -1,12 +1,16 @@
 from fastapi import FastAPI, HTTPException
-from db.supabase_client import SupabaseClient
-from db.queries import Queries
 from fastapi.middleware.cors import CORSMiddleware
 
+from agents.schemas import FinalAgentDecision, IngestionRequest
+from db.supabase_client import SupabaseClient
+from db.queries import Queries
+from services.agent_service import AgentService
+
 app = FastAPI()
-queries =  Queries()
+queries = Queries()
 supabase = SupabaseClient()
 client = supabase.get_client()
+agent_service = AgentService()
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,13 +27,11 @@ def health_check():
 
 # Test database connection
 @app.get("/test-db")
-def test_db():
-
+async def test_db():
     try:
-        if queries.test_connection():
+        if await queries.test_connection():
             return {"status": "Database connection successful"}
-        else:
-            raise HTTPException(status_code=500, detail="Database connection failed")
+        raise HTTPException(status_code=500, detail="Database connection failed")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -83,3 +85,11 @@ def get_holdings(user_id: str):
         .execute()
 
     return res.data
+
+
+@app.post("/analyze", response_model=FinalAgentDecision)
+async def analyze(request: IngestionRequest):
+    try:
+        return await agent_service.run_portfolio_analysis(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

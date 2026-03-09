@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { CheckCircle2, Loader2, Circle } from "lucide-react";
-import type { AgentStep } from "@/lib/mockData";
+import type { AgentStep } from "@/lib/types";
 
 interface AgentPipelineProps {
   steps: AgentStep[];

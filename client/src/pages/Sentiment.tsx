@@ -1,15 +1,32 @@
 import { motion } from "framer-motion";
 import { Brain, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import NewsCard from "@/components/NewsCard";
-import { mockNews, mockMetrics } from "@/lib/mockData";
+import { analyzePortfolio } from "@/lib/api";
+import { buildAnalyzePayload, buildDashboardData } from "@/lib/analysis";
+import { getStoredUserId } from "@/lib/storage";
 
 export default function Sentiment() {
-  const positive = mockNews.filter((n) => n.sentiment === "positive").length;
-  const negative = mockNews.filter((n) => n.sentiment === "negative").length;
-  const neutral = mockNews.filter((n) => n.sentiment === "neutral").length;
+  const userId = getStoredUserId();
+  const { data } = useQuery({
+    queryKey: ["analysis", userId],
+    queryFn: () => analyzePortfolio(buildAnalyzePayload(userId, "")),
+    enabled: Boolean(userId),
+    staleTime: 60_000,
+  });
+
+  const view = data ? buildDashboardData(data) : null;
+  const positive = (view?.news ?? []).filter((n) => n.sentiment === "positive").length;
+  const negative = (view?.news ?? []).filter((n) => n.sentiment === "negative").length;
+  const neutral = (view?.news ?? []).filter((n) => n.sentiment === "neutral").length;
 
   return (
     <div className="space-y-8">
+      {!userId && (
+        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+          Set a user id on the Analysis page to load sentiment data.
+        </div>
+      )}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
         <h1 className="font-display text-3xl font-bold text-foreground">Sentiment & News</h1>
         <p className="mt-1 text-sm text-muted-foreground">Real-time sentiment from the agent ingestion pipeline</p>
@@ -23,7 +40,7 @@ export default function Sentiment() {
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <Brain className="h-4 w-4" /> Composite
           </div>
-          <p className="mt-2 font-display text-2xl font-bold text-card-foreground">{mockMetrics.sentimentScore.toFixed(2)}</p>
+          <p className="mt-2 font-display text-2xl font-bold text-card-foreground">{(view?.metrics.sentimentScore ?? 0).toFixed(2)}</p>
           <p className="mt-1 text-xs text-chart-positive font-medium">Moderately positive</p>
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
@@ -59,7 +76,7 @@ export default function Sentiment() {
       <section>
         <h2 className="font-display text-lg font-semibold text-foreground mb-4">Latest Headlines</h2>
         <div className="space-y-3">
-          {mockNews.map((item, i) => (
+          {(view?.news ?? []).map((item, i) => (
             <NewsCard key={item.id} item={item} index={i} />
           ))}
         </div>

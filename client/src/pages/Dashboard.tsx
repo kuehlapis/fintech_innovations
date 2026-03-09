@@ -1,15 +1,33 @@
 import { motion } from "framer-motion";
 import { DollarSign, BarChart3, Droplets, Brain, Activity } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import MetricCard from "@/components/MetricCard";
 import RecommendationCard from "@/components/RecommendationCard";
 import NewsCard from "@/components/NewsCard";
-import { mockMetrics, mockRecommendations, mockNews } from "@/lib/mockData";
+import { analyzePortfolio } from "@/lib/api";
+import { buildAnalyzePayload, buildDashboardData } from "@/lib/analysis";
+import { getStoredUserId } from "@/lib/storage";
 
 export default function Dashboard() {
   const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const userId = getStoredUserId();
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["analysis", userId],
+    queryFn: () => analyzePortfolio(buildAnalyzePayload(userId, "")),
+    enabled: Boolean(userId),
+    staleTime: 60_000,
+  });
+
+  const view = data ? buildDashboardData(data) : null;
 
   return (
     <div className="space-y-8">
+      {!userId && (
+        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+          Set a user id on the Analysis page to load live portfolio data.
+        </div>
+      )}
       {/* Hero section */}
       <motion.section
         initial={{ opacity: 0, y: 20 }}
@@ -21,21 +39,21 @@ export default function Dashboard() {
         <div className="relative">
           <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Portfolio Value</p>
           <h1 className="mt-2 font-display text-4xl md:text-5xl font-bold tracking-tight text-card-foreground">
-            {fmt.format(mockMetrics.totalValue)}
+            {fmt.format(view?.metrics.totalValue ?? 0)}
           </h1>
           <div className="mt-3 flex items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-chart-positive/10 px-3 py-1 text-sm font-semibold text-chart-positive">
               <Activity className="h-3.5 w-3.5" />
-              +{fmt.format(mockMetrics.dailyChange)} ({mockMetrics.dailyChangePercent}%)
+              +{fmt.format(view?.metrics.dailyChange ?? 0)} ({view?.metrics.dailyChangePercent ?? 0}%)
             </span>
             <span className="text-sm text-muted-foreground">today</span>
           </div>
           <div className="mt-4 flex items-center gap-2">
             <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-              {mockMetrics.riskLevel} Risk
+              {view?.metrics.riskLevel ?? "Unknown"} Risk
             </span>
             <span className="text-xs text-muted-foreground">
-              {mockRecommendations.length} pending recommendations
+              {(view?.recommendations.length ?? 0)} pending recommendations
             </span>
           </div>
         </div>
@@ -47,29 +65,29 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
             label="Total Value"
-            value={fmt.format(mockMetrics.totalValue)}
-            change={`+${mockMetrics.dailyChangePercent}%`}
+            value={fmt.format(view?.metrics.totalValue ?? 0)}
+            change={`+${view?.metrics.dailyChangePercent ?? 0}%`}
             changeType="positive"
             icon={<DollarSign className="h-4 w-4" />}
             delay={0}
           />
           <MetricCard
             label="Diversification"
-            value={`${mockMetrics.diversificationScore}/100`}
+            value={`${view?.metrics.diversificationScore ?? 0}/100`}
             changeType="neutral"
             icon={<BarChart3 className="h-4 w-4" />}
             delay={0.08}
           />
           <MetricCard
             label="Liquidity Ratio"
-            value={`${(mockMetrics.liquidityRatio * 100).toFixed(0)}%`}
+            value={`${((view?.metrics.liquidityRatio ?? 0) * 100).toFixed(0)}%`}
             changeType="neutral"
             icon={<Droplets className="h-4 w-4" />}
             delay={0.16}
           />
           <MetricCard
             label="Sentiment Score"
-            value={mockMetrics.sentimentScore.toFixed(2)}
+            value={(view?.metrics.sentimentScore ?? 0).toFixed(2)}
             change="Moderately positive"
             changeType="positive"
             icon={<Brain className="h-4 w-4" />}
@@ -83,18 +101,30 @@ export default function Dashboard() {
         <section className="lg:col-span-3">
           <h2 className="font-display text-lg font-semibold text-foreground mb-4">Recommendations</h2>
           <div className="space-y-4">
-            {mockRecommendations.map((rec, i) => (
+            {isLoading && (
+              <p className="text-sm text-muted-foreground">Loading recommendations…</p>
+            )}
+            {error && (
+              <p className="text-sm text-destructive">Unable to load recommendations.</p>
+            )}
+            {view?.recommendations.map((rec, i) => (
               <RecommendationCard key={rec.id} rec={rec} index={i} />
             ))}
+            {!isLoading && !error && view?.recommendations.length === 0 && (
+              <p className="text-sm text-muted-foreground">No recommendations available.</p>
+            )}
           </div>
         </section>
 
         <section className="lg:col-span-2">
           <h2 className="font-display text-lg font-semibold text-foreground mb-4">Market Sentiment</h2>
           <div className="space-y-3">
-            {mockNews.slice(0, 5).map((item, i) => (
+            {(view?.news ?? []).slice(0, 5).map((item, i) => (
               <NewsCard key={item.id} item={item} index={i} />
             ))}
+            {!isLoading && view?.news.length === 0 && (
+              <p className="text-sm text-muted-foreground">No news available.</p>
+            )}
           </div>
         </section>
       </div>

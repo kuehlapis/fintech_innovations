@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "@/lib/api";
-import { setStoredUserId } from "@/lib/storage";
+import { setAccessToken, setRefreshToken, setStoredUserId } from "@/lib/storage";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -17,11 +17,14 @@ export default function Login() {
 
     setLoading(true);
     try {
-      await login(email.trim(), password);
-      setStoredUserId(email.trim());
+      const res = await login(email.trim(), password);
+      if (!res.user_id || !res.access_token) throw new Error("No token returned");
+      setStoredUserId(res.user_id);
+      setAccessToken(res.access_token);
+      setRefreshToken(res.refresh_token ?? "");
       setMessage("Login successful.");
-      navigate("/holdings");
-    } catch (error) {
+      navigate("/dashboard");
+    } catch {
       setMessage("Login failed. Check your credentials or confirm your email.");
     } finally {
       setLoading(false);
@@ -37,7 +40,7 @@ export default function Login() {
     <div className="max-w-md mx-auto space-y-8">
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
         <h1 className="font-display text-3xl font-bold text-foreground">Log in</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Access your Assetwise account.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Access your OneWealth account.</p>
       </motion.div>
 
       <motion.form
@@ -53,7 +56,7 @@ export default function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="mt-2 w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-2 w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground"
           />
         </label>
 
@@ -64,22 +67,22 @@ export default function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Your password"
-            className="mt-2 w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="mt-2 w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground"
           />
         </label>
 
         <button
           type="submit"
           disabled={!email.trim() || !password.trim() || loading}
-          className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
         >
-          {loading ? "Logging in…" : "Log in"}
+          {loading ? "Logging in..." : "Log in"}
         </button>
 
         <button
           type="button"
           onClick={handleGuest}
-          className="w-full rounded-lg border border-border bg-muted px-4 py-2.5 text-sm font-semibold text-foreground hover:border-primary/30 transition-colors"
+          className="w-full rounded-lg border border-border bg-muted px-4 py-2.5 text-sm font-semibold text-foreground"
         >
           Continue as guest
         </button>
@@ -87,7 +90,7 @@ export default function Login() {
         {message && <p className="text-sm text-muted-foreground">{message}</p>}
 
         <p className="text-sm text-muted-foreground">
-          New to Assetwise? <Link className="text-primary hover:underline" to="/signup">Create an account</Link>
+          New to OneWealth? <Link className="text-primary hover:underline" to="/signup">Create an account</Link>
         </p>
       </motion.form>
     </div>

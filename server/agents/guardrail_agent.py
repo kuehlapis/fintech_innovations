@@ -1,11 +1,15 @@
 import os
 import re
+import yaml
 from functools import partial
 from typing import Callable, List
 
-import yaml
-
-from agents.schemas import AdvisoryRecommendation, GuardrailIssue, GuardrailResult, IngestionResult
+from models.schemas import (
+    AdvisoryRecommendation,
+    GuardrailIssue,
+    GuardrailResult,
+    IngestionResult,
+)
 
 GR_RULEBOOK = os.path.join(os.path.dirname(__file__), "rules", "guardrail.yaml")
 
@@ -126,26 +130,37 @@ class GuardrailAgent:
         recommendation: AdvisoryRecommendation,
         ingestion: IngestionResult,
     ) -> GuardrailResult:
-        adjusted = AdvisoryRecommendation(**recommendation.dict())
+        issues: List[GuardrailIssue] = []
+        approved = True
 
-        adjusted.summary = self._apply_text_rules(adjusted.summary)
-        adjusted.rationale = self._apply_text_rules(adjusted.rationale)
-        adjusted.outlook = self._apply_text_rules(adjusted.outlook)
-        adjusted.actions = [self._apply_text_rules(action) for action in adjusted.actions]
+        blob = " ".join(
+            [recommendation.summary, recommendation.rationale, recommendation.outlook]
+            + recommendation.actions
+        ).lower()
 
-        if not adjusted.warnings:
-            adjusted.warnings.append("Advisory only. No trades are executed.")
-
-        issues = self._detect_issues(adjusted)
-        approved = not any(issue.severity == "blocker" for issue in issues)
-
-        if ingestion.holdings and not adjusted.actions:
+        if re.search(r"\b(guarantee|guaranteed|certain return)\b", blob):
             issues.append(
                 GuardrailIssue(
-                    code="missing_actions",
-                    message="Holdings present but no actions were suggested.",
+                    code="guaranteed_returns",
+                    message="Guaranteed-return language detected.",
+                    severity="blocker",
                 )
             )
+            approved = False
+
+        if re.search(r"\b(execute|place|submit)\s+(trade|order)\b", blob):
+            issues.append(
+                GuardrailIssue(
+                    code="direct_execution",
+                    message="Direct execution language detected.",
+                    severity="blocker",
+                )
+            )
+            approved = False
+
+        adjusted = AdvisoryRecommendation(**recommendation.model_dump())
+        if not adjusted.warnings:
+            adjusted.warnings.append("Advisory only. No trades are executed.")
 
         return GuardrailResult(
             approved=approved,

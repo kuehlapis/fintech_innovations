@@ -10,6 +10,7 @@ import Holdings from "@/pages/Holdings";
 import Sentiment from "@/pages/Sentiment";
 import AnalysisRequest from "@/pages/AnalysisRequest";
 import RecommendationDetail from "@/pages/RecommendationDetail";
+import Transactions from "@/pages/Transactions";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import NotFound from "./pages/NotFound.tsx";
@@ -35,6 +36,11 @@ const App = () => (
             <Route path="/holdings" element={
               <ProtectedRoute>
                 <Holdings />
+              </ProtectedRoute>
+            } />
+            <Route path="/transactions" element={
+              <ProtectedRoute>
+                <Transactions />
               </ProtectedRoute>
             } />
             <Route path="/sentiment" element={

@@ -30,7 +30,7 @@ export default function Signup() {
     <div className="max-w-md mx-auto space-y-8">
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
         <h1 className="font-display text-3xl font-bold text-foreground">Create account</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Get started with Assetwise.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Get started with OneWealth.</p>
       </motion.div>
 
       <motion.form

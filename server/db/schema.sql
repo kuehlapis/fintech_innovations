@@ -1,297 +1,127 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
--- ============================================================
--- Enable UUID extension
--- ============================================================
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- ============================================================
--- USERS & PORTFOLIOS
--- ============================================================
-
--- Portfolio table (one portfolio per user)
-CREATE TABLE IF NOT EXISTS public.portfolios (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    user_id uuid UNIQUE NOT NULL REFERENCES auth.users(id),
-    created_at timestamptz DEFAULT now(),
-    updated_at timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.agent_outputs (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  analysis_run_id uuid NOT NULL,
+  agent_name text,
+  output jsonb,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT agent_outputs_pkey PRIMARY KEY (id),
+  CONSTRAINT agent_outputs_analysis_run_id_fkey FOREIGN KEY (analysis_run_id) REFERENCES public.analysis_runs(id)
 );
-
--- ============================================================
--- ASSETS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.assets (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    ticker text,
-    asset_class text NOT NULL,
-    created_at timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.analysis_runs (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  portfolio_id uuid,
+  status text DEFAULT 'completed'::text,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT analysis_runs_pkey PRIMARY KEY (id),
+  CONSTRAINT analysis_runs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT analysis_runs_portfolio_id_fkey FOREIGN KEY (portfolio_id) REFERENCES public.portfolios(id)
 );
-
--- ============================================================
--- PORTFOLIO ASSETS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.portfolio_assets (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    portfolio_id uuid NOT NULL REFERENCES public.portfolios(id) ON DELETE CASCADE,
-    asset_id uuid NOT NULL REFERENCES public.assets(id) ON DELETE CASCADE,
-    quantity double precision NOT NULL CHECK (quantity > 0),
-    entry_price double precision,
-    created_at timestamptz DEFAULT now(),
-    updated_at timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.countries (
+  code text NOT NULL,
+  name text NOT NULL UNIQUE,
+  CONSTRAINT countries_pkey PRIMARY KEY (code)
 );
-
--- ============================================================
--- PROPERTY ASSETS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.property_assets (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    asset_id uuid NOT NULL REFERENCES public.assets(id) ON DELETE CASCADE,
-    address text,
-    purchase_price double precision,
-    mortgage_value double precision,
-    interest_rate double precision,
-    rental_income double precision,
-    remaining_lease text,
-    other_details jsonb,
-    created_at timestamptz DEFAULT now(),
-    updated_at timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.financial_accounts (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  account_type text CHECK (account_type = ANY (ARRAY['bank'::text, 'credit_card'::text])),
+  institution_name text,
+  account_name text,
+  currency text DEFAULT 'USD'::text,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT financial_accounts_pkey PRIMARY KEY (id),
+  CONSTRAINT financial_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-
--- ============================================================
--- ASSET PRICES
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.asset_prices (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    asset_id uuid NOT NULL REFERENCES public.assets(id) ON DELETE CASCADE,
-    price double precision NOT NULL,
-    source text,
-    timestamp timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.investor_profiles (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL UNIQUE,
+  risk_tolerance text CHECK (risk_tolerance = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])),
+  investment_horizon text,
+  preferred_sectors ARRAY,
+  excluded_sectors ARRAY,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT investor_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT investor_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-
--- ============================================================
--- PORTFOLIO HEALTH
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.portfolio_health (
-    portfolio_id uuid NOT NULL REFERENCES public.portfolios(id) ON DELETE CASCADE,
-    total_value double precision,
-    diversification_score double precision CHECK (diversification_score >= 0 AND diversification_score <= 1),
-    liquidity_ratio double precision,
-    sentiment_score double precision CHECK (sentiment_score >= -1 AND sentiment_score <= 1),
-    wellness_score integer CHECK (wellness_score >= 0 AND wellness_score <= 100),
-    advisory_text text,
-    asset_weights jsonb,
-    price_snapshot jsonb,
-    updated_at timestamptz DEFAULT now(),
-    PRIMARY KEY (portfolio_id)
+CREATE TABLE public.portfolio_assets (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  portfolio_id uuid NOT NULL,
+  asset_type text CHECK (asset_type = ANY (ARRAY['savings'::text, 'equity'::text, 'bond'::text, 'crypto'::text, 'real_estate'::text, 'private_equity'::text])),
+  asset_name text,
+  ticker text,
+  sector text,
+  quantity numeric,
+  value numeric,
+  country text,
+  city text,
+  property_type text CHECK (property_type = ANY (ARRAY['residential'::text, 'commercial'::text, 'industrial'::text, 'reit'::text])),
+  metadata jsonb,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT portfolio_assets_pkey PRIMARY KEY (id),
+  CONSTRAINT portfolio_assets_portfolio_id_fkey FOREIGN KEY (portfolio_id) REFERENCES public.portfolios(id),
+  CONSTRAINT portfolio_assets_country_fkey FOREIGN KEY (country) REFERENCES public.countries(code)
 );
-
--- ============================================================
--- PORTFOLIO HISTORY
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.portfolio_history (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    portfolio_id uuid NOT NULL REFERENCES public.portfolios(id) ON DELETE CASCADE,
-    total_value double precision,
-    created_at timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.portfolio_metrics (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  portfolio_id uuid,
+  portfolio_health_score numeric,
+  crypto_percentage numeric,
+  equity_percentage numeric,
+  real_estate_percentage numeric,
+  savings_percentage numeric,
+  bond_percentage numeric,
+  updated_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT portfolio_metrics_pkey PRIMARY KEY (id),
+  CONSTRAINT portfolio_metrics_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT portfolio_metrics_portfolio_id_fkey FOREIGN KEY (portfolio_id) REFERENCES public.portfolios(id)
 );
-
--- ============================================================
--- AI INSIGHTS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.ai_insights (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    portfolio_id uuid NOT NULL REFERENCES public.portfolios(id) ON DELETE CASCADE,
-    agent_name text,
-    recommendation text,
-    confidence_score double precision,
-    created_at timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.portfolios (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  portfolio_name text,
+  base_currency text DEFAULT 'USD'::text,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT portfolios_pkey PRIMARY KEY (id),
+  CONSTRAINT portfolios_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-
--- ============================================================
--- TRANSACTIONS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.transactions (
-    id uuid NOT NULL DEFAULT uuid_generate_v4(),
-    portfolio_id uuid NOT NULL REFERENCES public.portfolios(id) ON DELETE CASCADE,
-    asset_id uuid NOT NULL REFERENCES public.assets(id) ON DELETE CASCADE,
-    transaction_type text CHECK (transaction_type IN ('buy','sell')),
-    quantity double precision NOT NULL,
-    price double precision NOT NULL,
-    created_at timestamptz DEFAULT now(),
-    PRIMARY KEY (id)
+CREATE TABLE public.recommendations (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  analysis_run_id uuid NOT NULL,
+  portfolio_health_score numeric,
+  risk_level text,
+  recommended_allocation jsonb,
+  recommendations jsonb,
+  reasoning text,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT recommendations_pkey PRIMARY KEY (id),
+  CONSTRAINT recommendations_analysis_run_id_fkey FOREIGN KEY (analysis_run_id) REFERENCES public.analysis_runs(id)
 );
-
--- ============================================================
--- ENABLE ROW LEVEL SECURITY (RLS)
--- ============================================================
-
-ALTER TABLE public.portfolios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.portfolio_assets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.property_assets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.asset_prices ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.portfolio_health ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.portfolio_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
-
--- ============================================================
--- RLS POLICIES
--- ============================================================
-
--- Users can access their own portfolio
-CREATE POLICY "Users can manage their portfolio"
-    ON public.portfolios
-    FOR ALL
-    USING (user_id = auth.uid());
-
--- Users can manage assets in their own portfolio
-CREATE POLICY "Users can manage portfolio_assets"
-    ON public.portfolio_assets
-    FOR ALL
-    USING (portfolio_id IN (SELECT id FROM public.portfolios WHERE user_id = auth.uid()));
-
--- Users can manage property assets linked to their portfolio
-CREATE POLICY "Users can manage property_assets"
-    ON public.property_assets
-    FOR ALL
-    USING (asset_id IN (SELECT asset_id FROM public.portfolio_assets WHERE portfolio_id IN (SELECT id FROM public.portfolios WHERE user_id = auth.uid())));
-
--- Users can read asset prices (optional: allow read-only for all users)
-CREATE POLICY "Users can read asset_prices"
-    ON public.asset_prices
-    FOR SELECT
-    USING (TRUE);
-
--- Users can manage their portfolio health
-ALTER TABLE public.portfolio_health ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can only read their own portfolio_health
-CREATE POLICY "Users can read portfolio_health"
-    ON public.portfolio_health
-    FOR SELECT
-    USING (
-        portfolio_id IN (
-            SELECT id 
-            FROM public.portfolios 
-            WHERE user_id = auth.uid()
-        )
-    );
-
--- Users can manage portfolio history
-ALTER TABLE public.portfolio_history ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can only read their own portfolio history
-CREATE POLICY "Users can read portfolio_history"
-    ON public.portfolio_history
-    FOR SELECT
-    USING (
-        portfolio_id IN (
-            SELECT id
-            FROM public.portfolios
-            WHERE user_id = auth.uid()
-        )
-    );
-
--- Users can manage AI insights for their portfolio
-
-ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage ai_insights"
-    ON public.ai_insights
-    FOR SELECT
-    USING (portfolio_id IN (SELECT id FROM public.portfolios WHERE user_id = auth.uid()));
-
--- Users can manage their transactions
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can only read their own transactions
-CREATE POLICY "Users can read transactions"
-    ON public.transactions
-    FOR SELECT
-    USING (
-        portfolio_id IN (
-            SELECT id
-            FROM public.portfolios
-            WHERE user_id = auth.uid()
-        )
-    );
-
--- Enable RLS on assets
-ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can read assets linked to their portfolio
-CREATE POLICY "Users can read their assets"
-    ON public.assets
-    FOR SELECT
-    USING (
-        id IN (
-            SELECT asset_id 
-            FROM public.portfolio_assets 
-            WHERE portfolio_id IN (
-                SELECT id 
-                FROM public.portfolios 
-                WHERE user_id = auth.uid()
-            )
-        )
-    );
-
--- Policy: Users can insert assets if they are linked to their portfolio
-CREATE POLICY "Users can insert assets"
-    ON public.assets
-    FOR INSERT
-    WITH CHECK (
-        id IN (
-            SELECT asset_id 
-            FROM public.portfolio_assets 
-            WHERE portfolio_id IN (
-                SELECT id 
-                FROM public.portfolios 
-                WHERE user_id = auth.uid()
-            )
-        )
-    );
-
--- Policy: Users can update assets linked to their portfolio
-CREATE POLICY "Users can update assets"
-    ON public.assets
-    FOR UPDATE
-    USING (
-        id IN (
-            SELECT asset_id 
-            FROM public.portfolio_assets 
-            WHERE portfolio_id IN (
-                SELECT id 
-                FROM public.portfolios 
-                WHERE user_id = auth.uid()
-            )
-        )
-    );
-
--- Policy: Users can delete assets linked to their portfolio
-CREATE POLICY "Users can delete assets"
-    ON public.assets
-    FOR DELETE
-    USING (
-        id IN (
-            SELECT asset_id 
-            FROM public.portfolio_assets 
-            WHERE portfolio_id IN (
-                SELECT id 
-                FROM public.portfolios 
-                WHERE user_id = auth.uid()
-            )
-        )
-    );
+CREATE TABLE public.statement_uploads (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  account_id uuid,
+  file_url text,
+  statement_period_start date,
+  statement_period_end date,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT statement_uploads_pkey PRIMARY KEY (id),
+  CONSTRAINT statement_uploads_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT statement_uploads_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.financial_accounts(id)
+);
+CREATE TABLE public.transactions (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  account_id uuid NOT NULL,
+  transaction_date date,
+  transaction_type text CHECK (transaction_type = ANY (ARRAY['income'::text, 'expense'::text, 'transfer'::text])),
+  category text,
+  amount numeric NOT NULL,
+  description text,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT transactions_pkey PRIMARY KEY (id),
+  CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.financial_accounts(id)
+);

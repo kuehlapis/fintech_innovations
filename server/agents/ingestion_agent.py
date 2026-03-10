@@ -1,54 +1,66 @@
-"""Agent 1 - normalize incoming portfolio input and enrich with prices."""
+# ingestion_agent.py
+import json
 import logging
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
-from agents.schemas import Holding, IngestionRequest, IngestionResult
-from db.queries import Queries
-from services.market_data import MarketDataService
+from models.schemas import Holding, IngestionRequest, IngestionResult
 
 logger = logging.getLogger(__name__)
+
+
+class IngestionLLMOutput(BaseModel):
+    normalized_text: str = ""
+    holdings: list[Holding] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
 
 
 class IngestionAgent(BaseAgent):
     def __init__(self) -> None:
         super().__init__(agent_type="ingestion")
-        self.queries = Queries()
-        self.market_data = MarketDataService()
-
-    async def _load_holdings(self, request: IngestionRequest) -> list[Holding]:
-        if request.holdings:
-            return request.holdings
-
-        if not request.user_id:
-            return []
-
-        logger.info("[IngestionAgent] Fetching holdings for user %s", request.user_id)
-        raw_holdings = await self.queries.get_holdings_by_user(request.user_id)
-        return [
-            Holding(
-                ticker=h.get("ticker", ""),
-                quantity=float(h.get("quantity", 0)),
-                asset_class=h.get("asset_class", "other"),
-            )
-            for h in raw_holdings
-        ]
 
     async def run(self, request: IngestionRequest) -> IngestionResult:
-        holdings = await self._load_holdings(request)
+        holdings = request.holdings or []
         tickers = [h.ticker for h in holdings if h.ticker]
-        prices = await self.market_data.get_current_prices(tickers)
-        news = request.news_headlines or await self.market_data.fetch_news_headlines(
-            tickers
-        )
+        prices = {t: 100.0 for t in tickers}  # replace with market data service
 
-        if not holdings:
-            logger.warning("[IngestionAgent] No holdings provided")
-
-        return IngestionResult(
+        # Deterministic baseline
+        baseline = IngestionResult(
             user_id=request.user_id,
-            normalized_text=request.raw_text.strip(),
+            normalized_text=request.raw_text or "",
             holdings=holdings,
             tickers=tickers,
             prices=prices,
-            news_headlines=news,
+            news_headlines=request.news_headlines or [],
         )
+
+        # LLM enrichment when available
+        if not self.client:
+            return baseline
+
+        try:
+            prompt_payload = {
+                "user_id": request.user_id,
+                "raw_text": request.raw_text,
+                "holdings": [h.model_dump() for h in holdings],
+            }
+            llm = self.run_structured(
+                input_text=f"Normalize this portfolio input:\n{json.dumps(prompt_payload)}",
+                schema=IngestionLLMOutput,
+            )
+
+            merged_holdings = llm.holdings if llm.holdings else baseline.holdings
+            merged_tickers = [h.ticker for h in merged_holdings if h.ticker]
+            merged_prices = {t: prices.get(t, 100.0) for t in merged_tickers}
+
+            return IngestionResult(
+                user_id=request.user_id,
+                normalized_text=llm.normalized_text or baseline.normalized_text,
+                holdings=merged_holdings,
+                tickers=merged_tickers,
+                prices=merged_prices,
+                news_headlines=baseline.news_headlines,
+            )
+        except Exception as exc:
+            logger.warning("[ingestion] LLM enrichment failed, using baseline: %s", exc)
+            return baseline

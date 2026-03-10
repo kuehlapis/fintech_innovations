@@ -1,7 +1,7 @@
 import * as React from "react";
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TrendingUp, TrendingDown, Minus, Loader2, PlayCircle } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { addHolding, analyzePortfolio } from "@/lib/api";
 import { buildAnalyzePayload, buildDashboardData } from "@/lib/analysis";
 import { addStoredGuestHolding, getStoredGuestHoldings, getStoredUserId } from "@/lib/storage";
@@ -9,16 +9,15 @@ import { addStoredGuestHolding, getStoredGuestHoldings, getStoredUserId } from "
 export default function Holdings() {
   const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
   const userId = getStoredUserId();
-  const queryClient = useQueryClient();
   const [ticker, setTicker] = React.useState("");
   const [quantity, setQuantity] = React.useState("");
   const [submitMessage, setSubmitMessage] = React.useState("");
 
-  const { data } = useQuery({
+  const { data, isFetching, refetch } = useQuery({
     queryKey: ["analysis", userId],
     queryFn: () => analyzePortfolio(buildAnalyzePayload(userId, "")),
-    enabled: Boolean(userId),
-    staleTime: 60_000,
+    enabled: false,
+    staleTime: Infinity,
   });
 
   const addMutation = useMutation({
@@ -32,10 +31,9 @@ export default function Holdings() {
       return addHolding(userId, symbol, qty);
     },
     onSuccess: () => {
-      setSubmitMessage("Holding added.");
+      setSubmitMessage("Holding added. Press \"Analyse Holdings\" to update your analysis.");
       setTicker("");
       setQuantity("");
-      queryClient.invalidateQueries({ queryKey: ["analysis", userId] });
     },
     onError: () => setSubmitMessage("Unable to add holding."),
   });
@@ -63,7 +61,13 @@ export default function Holdings() {
           transition={{ duration: 0.4 }}
           className="rounded-xl border border-border bg-card p-6 space-y-4"
         >
-          <h2 className="font-display text-base font-semibold text-card-foreground">Add Holding</h2>
+          <div>
+            <h2 className="font-display text-base font-semibold text-card-foreground">Add Holding</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Add your holdings here. When you are ready, press "Analyse Holdings" to run the agent pipeline on your
+              current portfolio.
+            </p>
+          </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Ticker</span>
@@ -98,6 +102,20 @@ export default function Holdings() {
           {submitMessage && (
             <p className="text-sm text-muted-foreground">{submitMessage}</p>
           )}
+          <div className="pt-1 border-t border-border flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+              {isFetching ? "Running agents…" : "Analyse Holdings"}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              Calls the full Gemini agent pipeline. Only press once all holdings have been added.
+            </span>
+          </div>
         </motion.section>
       )}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>

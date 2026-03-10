@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { DollarSign, BarChart3, Droplets, Brain, Activity } from "lucide-react";
+import { DollarSign, BarChart3, Droplets, Brain, Activity, Loader2, PlayCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import MetricCard from "@/components/MetricCard";
 import RecommendationCard from "@/components/RecommendationCard";
@@ -12,11 +12,11 @@ export default function Dashboard() {
   const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
   const userId = getStoredUserId();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isError, isFetching, refetch } = useQuery({
     queryKey: ["analysis", userId],
     queryFn: () => analyzePortfolio(buildAnalyzePayload(userId, "")),
-    enabled: Boolean(userId),
-    staleTime: 60_000,
+    enabled: false,
+    staleTime: Infinity,
   });
 
   const view = data ? buildDashboardData(data) : null;
@@ -27,6 +27,33 @@ export default function Dashboard() {
         <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
           Set a user id on the Analysis page to load live portfolio data.
         </div>
+      )}
+
+      {/* Analyse trigger */}
+      {userId && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="rounded-xl border border-border bg-card p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+        >
+          <div className="flex-1">
+            <p className="text-sm font-medium text-card-foreground">Analyse Portfolio</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Runs the full agent pipeline — ingestion, equity, crypto, real estate, quant, sentiment, advisory, and
+              guardrail. Each agent calls the Gemini API in sequence. Only press when you want a fresh analysis.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={isFetching || !userId}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+            {isFetching ? "Running agents…" : "Run Analysis"}
+          </button>
+        </motion.div>
       )}
       {/* Hero section */}
       <motion.section
@@ -101,16 +128,21 @@ export default function Dashboard() {
         <section className="lg:col-span-3">
           <h2 className="font-display text-lg font-semibold text-foreground mb-4">Recommendations</h2>
           <div className="space-y-4">
-            {isLoading && (
-              <p className="text-sm text-muted-foreground">Loading recommendations…</p>
+            {isFetching && (
+              <p className="text-sm text-muted-foreground">Running agent pipeline…</p>
             )}
-            {error && (
+            {isError && (
               <p className="text-sm text-destructive">Unable to load recommendations.</p>
             )}
             {view?.recommendations.map((rec, i) => (
               <RecommendationCard key={rec.id} rec={rec} index={i} />
             ))}
-            {!isLoading && !error && view?.recommendations.length === 0 && (
+            {!isFetching && !isError && !view && (
+              <p className="text-sm text-muted-foreground">
+                No analysis yet. Press "Run Analysis" above to generate recommendations.
+              </p>
+            )}
+            {!isFetching && !isError && view?.recommendations.length === 0 && (
               <p className="text-sm text-muted-foreground">No recommendations available.</p>
             )}
           </div>
@@ -122,7 +154,7 @@ export default function Dashboard() {
             {(view?.news ?? []).slice(0, 5).map((item, i) => (
               <NewsCard key={item.id} item={item} index={i} />
             ))}
-            {!isLoading && view?.news.length === 0 && (
+            {!isFetching && view?.news.length === 0 && (
               <p className="text-sm text-muted-foreground">No news available.</p>
             )}
           </div>

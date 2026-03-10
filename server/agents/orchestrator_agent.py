@@ -1,9 +1,13 @@
+import asyncio
 import uuid
 from collections import defaultdict
 
 from agents.guardrail_agent import GuardrailAgent
 from agents.registry import AgentRegistry
 from models.schemas import FinalAgentDecision, IngestionRequest, QuantSignal
+
+# Delay (seconds) between consecutive Gemini API calls to avoid rate limiting
+_AGENT_DELAY = 2.0
 
 
 class OrchestratorAgent:
@@ -47,26 +51,34 @@ class OrchestratorAgent:
         crypto = QuantSignal()
         real_estate = QuantSignal()
 
+        await asyncio.sleep(_AGENT_DELAY)
         try:
             equity = await self.equity_agent.run(ingestion)
         except Exception as exc:
             warnings.append(f"equity agent failed: {exc}")
 
+        await asyncio.sleep(_AGENT_DELAY)
         try:
             crypto = await self.crypto_agent.run(ingestion)
         except Exception as exc:
             warnings.append(f"crypto agent failed: {exc}")
 
+        await asyncio.sleep(_AGENT_DELAY)
         try:
             real_estate = await self.real_estate_agent.run(ingestion)
         except Exception as exc:
             warnings.append(f"real_estate agent failed: {exc}")
 
+        await asyncio.sleep(_AGENT_DELAY)
         quant_base = await self.quant_agent.run(ingestion)
         quant = self._blend(quant_base, [equity, crypto, real_estate])
 
+        await asyncio.sleep(_AGENT_DELAY)
         sentiment = await self.sentiment_agent.run(ingestion)
+
+        await asyncio.sleep(_AGENT_DELAY)
         advisory = await self.advisory_agent.run(ingestion, sentiment, quant)
+
         guardrail = await self.guardrail_agent.run(advisory, ingestion)
         final_advisory = guardrail.adjusted_recommendation or advisory
 

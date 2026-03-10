@@ -47,6 +47,8 @@ export default function AnalysisRequest() {
         <h1 className="font-display text-3xl font-bold text-foreground">Request Analysis</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Submit a query to the agent pipeline for portfolio analysis and advisory recommendations.
+          Agents run sequentially with delays to stay within Gemini API rate limits — each pipeline run calls
+          ingestion, equity, crypto, real estate, quant, sentiment, advisory, and guardrail in order.
         </p>
       </motion.div>
 
@@ -92,6 +94,9 @@ export default function AnalysisRequest() {
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           {loading ? "Processing…" : "Submit to Pipeline"}
         </button>
+        <p className="text-xs text-muted-foreground">
+          Each agent call is delayed to avoid rate limiting. Do not re-submit while processing is in progress.
+        </p>
 
         {mutation.isError && (
           <p className="text-sm text-destructive">Unable to submit analysis request.</p>
